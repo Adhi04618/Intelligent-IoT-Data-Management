@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import RealTimeGraph from "./RealTimeGraph";
 import html2canvas from "html2canvas";
@@ -31,6 +31,76 @@ const AnalyzePanel = () => {
 
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [backendStatus, setBackendStatus] = useState("Checking...");
+const [apiResponseTime, setApiResponseTime] = useState(null);
+const [recordCount, setRecordCount] = useState(0);
+const [analyticsSummary, setAnalyticsSummary] = useState(null);
+
+useEffect(() => {
+  const checkBackend = async () => {
+    const start = performance.now();
+
+    try {
+      const response = await axios.get(
+        "http://127.0.0.1:8000/api/processed/"
+      );
+
+      const end = performance.now();
+
+      setBackendStatus("Online");
+      setApiResponseTime((end - start).toFixed(2));
+      setRecordCount(Array.isArray(response.data) ? response.data.length : 0);
+      const data = Array.isArray(response.data) ? response.data : [];
+
+if (data.length > 0) {
+  const avgTemperature =
+    data.reduce((sum, item) => sum + Number(item.temperature || 0), 0) /
+    data.length;
+
+  const avgHumidity =
+    data.reduce((sum, item) => sum + Number(item.humidity || 0), 0) /
+    data.length;
+
+  const avgVoltage =
+    data.reduce((sum, item) => sum + Number(item.voltage || 0), 0) /
+    data.length;
+
+  const interpolatedCount = data.filter(
+    (item) => item.was_interpolated === true
+  ).length;
+
+  const originalCount = data.length - interpolatedCount;
+
+const completeRecords = data.filter(
+  (item) =>
+    item.temperature != null &&
+    item.humidity != null &&
+    item.voltage != null
+).length;
+
+const completeness =
+  (completeRecords / data.length) * 100;
+
+  setAnalyticsSummary({
+    avgTemperature: avgTemperature.toFixed(2),
+    avgHumidity: avgHumidity.toFixed(2),
+    avgVoltage: avgVoltage.toFixed(2),
+    interpolatedCount,
+    originalCount,
+  completeRecords,
+  completeness: completeness.toFixed(2),
+  });
+}
+    } catch (err) {
+      console.error("Backend check failed:", err);
+      setBackendStatus("Offline");
+      setApiResponseTime(null);
+      setRecordCount(0);
+    }
+  };
+
+  checkBackend();
+}, []);
 
   const sampleData = [
     {
@@ -289,6 +359,132 @@ const AnalyzePanel = () => {
         {" "}
         Analyze Sensor Correlation
       </Typography>
+      <Box
+  display="flex"
+  gap={2}
+  justifyContent="center"
+  flexWrap="wrap"
+  sx={{ mb: 3 }}
+>
+  <Paper sx={{ p: 2, minWidth: 180, textAlign: "center" }}>
+    <Typography variant="subtitle2">Backend Status</Typography>
+    <Typography variant="h6">{backendStatus}</Typography>
+  </Paper>
+
+  <Paper sx={{ p: 2, minWidth: 180, textAlign: "center" }}>
+    <Typography variant="subtitle2">API Response Time</Typography>
+    <Typography variant="h6">
+      {apiResponseTime ? `${apiResponseTime} ms` : "N/A"}
+    </Typography>
+  </Paper>
+
+  <Paper sx={{ p: 2, minWidth: 180, textAlign: "center" }}>
+    <Typography variant="subtitle2">Processed Records</Typography>
+    <Typography variant="h6">{recordCount}</Typography>
+  </Paper>
+</Box>
+
+<Paper
+  sx={{
+    p: 2,
+    mb: 3,
+    maxWidth: 760,
+    mx: "auto",
+  }}
+>
+  <Typography variant="h6" gutterBottom>
+    Performance Engineering Insights
+  </Typography>
+
+  <Typography>
+    Backend Health: {backendStatus}
+  </Typography>
+
+  <Typography>
+  {apiResponseTime
+    ? Number(apiResponseTime) < 1000
+      ? `Latency Status: Responsive (${apiResponseTime} ms)`
+      : `Latency Status: High Latency (${apiResponseTime} ms)`
+    : "Latency Status: Not Available"}
+</Typography>
+
+  <Typography>
+  {recordCount > 0
+    ? `Processed Records Available: ${recordCount}`
+    : "Processed Records Available: 0"}
+</Typography>
+
+<Typography>
+  {apiResponseTime && Number(apiResponseTime) >= 1000
+    ? "Performance Recommendation: Backend latency should be investigated."
+    : "Performance Recommendation: Backend response is within the expected range."}
+</Typography>
+
+</Paper>
+{analyticsSummary && (
+  <Paper
+    sx={{
+      p: 2,
+      mb: 3,
+      maxWidth: 760,
+      mx: "auto",
+    }}
+  >
+    <Typography variant="h6" gutterBottom>
+      Analytics Summary
+    </Typography>
+
+    <Typography>
+      Average Temperature: {analyticsSummary.avgTemperature}
+    </Typography>
+
+    <Typography>
+      Average Humidity: {analyticsSummary.avgHumidity}
+    </Typography>
+
+    <Typography>
+      Average Voltage: {analyticsSummary.avgVoltage}
+    </Typography>
+
+    <Typography>
+      Interpolated Records: {analyticsSummary.interpolatedCount}
+    </Typography>
+  </Paper>
+)}
+{analyticsSummary && (
+  <Paper
+    sx={{
+      p: 2,
+      mb: 3,
+      maxWidth: 760,
+      mx: "auto",
+    }}
+  >
+    <Typography variant="h6" gutterBottom>
+      Data Quality Summary
+    </Typography>
+
+    <Typography>
+      Total Records: {recordCount}
+    </Typography>
+
+    <Typography>
+      Original Records: {analyticsSummary.originalCount}
+    </Typography>
+
+    <Typography>
+      Interpolated Records: {analyticsSummary.interpolatedCount}
+    </Typography>
+
+    <Typography>
+      Complete Records: {analyticsSummary.completeRecords}
+    </Typography>
+
+    <Typography>
+      Data Completeness: {analyticsSummary.completeness}%
+    </Typography>
+  </Paper>
+)}
 
       <FormControl
         fullWidth
