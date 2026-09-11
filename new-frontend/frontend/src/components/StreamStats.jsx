@@ -9,6 +9,7 @@ const getStats = (data, stream) => {
       min: '-',
       max: '-',
       avg: '-',
+      stdDev: "-",
     };
   }
 
@@ -16,12 +17,16 @@ const getStats = (data, stream) => {
   const min = Math.min(...values);
   const max = Math.max(...values);
   const avg = values.reduce((a, b) => a + b, 0) / count;
+  const variance = values.reduce((sum, value) => sum + Math.pow(value - avg, 2), 0) / count;
+
+const stdDev = Math.sqrt(variance);
 
   return {
     count,
     min,
     max,
     avg: avg.toFixed(2),
+    stdDev: stdDev.toFixed(2),
   };
 };
 
@@ -80,6 +85,12 @@ const StreamStats = ({ data, stream }) => {
             {stats.count}
           </strong>
         </div>
+        <div className="insight-stat">
+  <span className="metric-title">Std Dev</span>
+  <strong className="metric-value">
+    {formatValue(stats.stdDev)}
+  </strong>
+</div>
       </div>
     </div>
   );

@@ -12,6 +12,11 @@ export const useSensorData = (
   const [isEmpty, setIsEmpty] = useState(false);
   const [isValid, setIsValid] = useState(true);
 
+  const [backendStatus, setBackendStatus] = useState('Checking...');
+  const [apiResponseTime, setApiResponseTime] = useState(null);
+  const [recordCount, setRecordCount] = useState(0);
+  const [apiResponseHistory, setApiResponseHistory] = useState([]);
+
   const validateData = (response) => {
     if (!response) {
       return {
@@ -93,6 +98,7 @@ export const useSensorData = (
 
     const loadSensorData = async () => {
       try {
+      const startTime = performance.now();
         setLoading(true);
         setError(null);
         setIsEmpty(false);
@@ -105,6 +111,17 @@ export const useSensorData = (
             baseUrl,
           }
         );
+
+        const endTime = performance.now();
+        setApiResponseTime((endTime - startTime).toFixed(2));
+        const latestTime = parseFloat((endTime - startTime).toFixed(2));
+
+        setApiResponseHistory(prev => {
+        const updated = [...prev, latestTime];
+        return updated.slice(-10);
+        });
+        setBackendStatus('Online');
+        setRecordCount(response?.rows?.length || 0);
 
         if (!active) {
           return;
@@ -147,6 +164,9 @@ export const useSensorData = (
         setIsEmpty(false);
         setIsValid(true);
       } catch (err) {
+        setBackendStatus('Offline');
+        setApiResponseTime(null);
+        setRecordCount(0);
         if (!active) {
           return;
         }
@@ -168,10 +188,14 @@ export const useSensorData = (
     };
 
     loadSensorData();
+    const intervalId = setInterval(() => {
+    loadSensorData();
+    }, 10000);
 
     return () => {
-      active = false;
-    };
+  active = false;
+  clearInterval(intervalId);
+  };
   }, [datasetId, useMock, baseUrl]);
 
   return {
@@ -180,5 +204,9 @@ export const useSensorData = (
     error,
     isEmpty,
     isValid,
+    backendStatus,
+    apiResponseTime,
+    recordCount,
+    apiResponseHistory,
   };
 };

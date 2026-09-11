@@ -8,6 +8,7 @@ import IntervalSelector from './IntervalSelector.jsx';
 import StreamStats from './StreamStats.jsx';
 import './Dashboard.css';
 import Chart from './Chart.jsx';
+import ApiResponseTrend from './ApiResponseTrend.jsx';
 import CorrelationAnalysis from './CorrelationAnalysis.jsx';
 import { calculateCorrelation } from '../utils/correlationUtils.js';
 import TimeRangePanel from './TimeRangePanel.jsx';
@@ -16,7 +17,17 @@ import { runAnalysis } from '../services/analysisService.js';
 
 const Dashboard = ({ datasetId }) => {
   // --- ALL HOOKS FIRST ---
-  const { data: sensorData, loading, error, isEmpty, isValid } = useSensorData(datasetId);
+  const {
+  data: sensorData,
+  loading,
+  error,
+  isEmpty,
+  isValid,
+  backendStatus,
+  apiResponseTime,
+  recordCount,
+  apiResponseHistory,
+} = useSensorData(datasetId);
 
   const data = useMemo(() => {
     if (!sensorData || !sensorData.rows) return [];
@@ -67,7 +78,90 @@ const Dashboard = ({ datasetId }) => {
     interval: selectedInterval
   });
 
+  const analyticsSummary = useMemo(() => {
+  if (filteredData.length === 0 || selectedStreams.length === 0) {
+    return [];
+  }
+
+  return selectedStreams.map((stream) => {
+    const values = filteredData
+      .map(row => parseFloat(row[stream]))
+      .filter(value => !isNaN(value));
+
+    if (values.length === 0) {
+      return {
+        stream,
+        average: '-',
+        min: '-',
+        max: '-',
+        records: 0,
+      };
+    }
+
+    return {
+      stream,
+      average: (
+        values.reduce((sum, value) => sum + value, 0) / values.length
+      ).toFixed(2),
+      min: Math.min(...values).toFixed(2),
+      max: Math.max(...values).toFixed(2),
+      records: values.length,
+    };
+  });
+}, [filteredData, selectedStreams]);
+
+const dataQuality = useMemo(() => {
+  if (filteredData.length === 0 || selectedStreams.length === 0) {
+    return {
+      totalRecords: 0,
+      completeRecords: 0,
+      missingValues: 0,
+      completeness: 0,
+    };
+  }
+
+  const totalRecords = filteredData.length;
+
+  let completeRecords = 0;
+  let missingValues = 0;
+
+  filteredData.forEach((row) => {
+    let complete = true;
+
+    selectedStreams.forEach((stream) => {
+      const value = row[stream];
+
+      if (value === null || value === undefined || value === '') {
+        missingValues++;
+        complete = false;
+      }
+    });
+
+    if (complete) {
+      completeRecords++;
+    }
+  });
+
+  const totalExpectedValues = totalRecords * selectedStreams.length;
+
+  const completeness =
+    totalExpectedValues > 0
+      ? ((totalExpectedValues - missingValues) / totalExpectedValues) * 100
+      : 0;
+
+  return {
+    totalRecords,
+    completeRecords,
+    missingValues,
+    completeness: completeness.toFixed(2),
+  };
+}, [filteredData, selectedStreams]);
+
   const streamCount = selectedStreams.length;
+  const apiTrendData = apiResponseHistory.map((time, index) => ({
+  test: `Test ${index + 1}`,
+  responseTime: time,
+  }));
 
   const correlationSummary = useMemo(() => {
     if (selectedStreams.length !== 2 || filteredData.length === 0) return null;
@@ -173,6 +267,30 @@ const Dashboard = ({ datasetId }) => {
       setAnalysisLoading(false);
     }
   }, [datasetId, selectedStreams]);
+
+  const handleExportCSV = () => {
+  if (filteredData.length === 0) return;
+
+  const headers = Object.keys(filteredData[0]);
+
+  const csvRows = [
+    headers.join(','),
+    ...filteredData.map(row =>
+      headers.map(header => row[header] ?? '').join(',')
+    )
+  ];
+
+  const csvContent = csvRows.join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `sensor-report-${datasetId}.csv`;
+  link.click();
+
+  URL.revokeObjectURL(url);
+};
 
   const formatTimeRange = (start, end, mode, range) => {
     if (mode === "relative") {
@@ -281,6 +399,21 @@ const Dashboard = ({ datasetId }) => {
             <span>Selected Range Points</span>
             <strong>{filteredData.length}</strong>
           </div>
+        
+        <div className="summary-pill">
+        <span>Backend Status</span>
+        <strong>{backendStatus}</strong>
+        </div>
+
+        <div className="summary-pill">
+        <span>API Response Time</span>
+        <strong>{apiResponseTime ? `${apiResponseTime} ms` : '-'}</strong>
+        </div>
+
+        <div className="summary-pill">
+        <span>Processed Records</span>
+        <strong>{recordCount}</strong>
+        </div>
         </div>
       </section>
 
@@ -291,6 +424,13 @@ const Dashboard = ({ datasetId }) => {
 
       <section className="dashboard-section controls-panel">
         <h3 className="section-title">Controls</h3>
+        <button
+  className="run-analysis-btn"
+  onClick={handleExportCSV}
+  disabled={filteredData.length === 0}
+>
+  Export CSV Report
+</button>
 
         <div className="selector-grid">
           <div className="selector-group">
@@ -349,9 +489,11 @@ const Dashboard = ({ datasetId }) => {
           </button>
         </div>
       </section>
+      
 
       <section className="dashboard-section insights-panel">
         <h3 className="section-title">Insight Cards</h3>
+        
 
         {streamCount === 0 ? (
           <div className="empty-state">
@@ -369,6 +511,59 @@ const Dashboard = ({ datasetId }) => {
           </div>
         )}
       </section>
+
+      <section className="dashboard-section">
+  <h3 className="section-title">Analytics Summary</h3>
+
+  {analyticsSummary.length === 0 ? (
+    <div className="empty-state">
+      Select one or more streams to view the analytics summary.
+    </div>
+  ) : (
+    <div className="stream-stats">
+      {analyticsSummary.map((item) => (
+        <div className="summary-pill" key={item.stream}>
+          <span>{item.stream}</span>
+          <strong>
+            Avg: {item.average} | Min: {item.min} | Max: {item.max} | Records: {item.records}
+          </strong>
+        </div>
+      ))}
+    </div>
+  )}
+</section>
+
+<section className="dashboard-section">
+  <h3 className="section-title">Data Quality Validation</h3>
+
+  {selectedStreams.length === 0 ? (
+    <div className="empty-state">
+      Select one or more streams to validate data quality.
+    </div>
+  ) : (
+    <div className="dataset-summary">
+      <div className="summary-pill">
+        <span>Total Records</span>
+        <strong>{dataQuality.totalRecords}</strong>
+      </div>
+
+      <div className="summary-pill">
+        <span>Complete Records</span>
+        <strong>{dataQuality.completeRecords}</strong>
+      </div>
+
+      <div className="summary-pill">
+        <span>Missing Values</span>
+        <strong>{dataQuality.missingValues}</strong>
+      </div>
+
+      <div className="summary-pill">
+        <span>Data Completeness</span>
+        <strong>{dataQuality.completeness}%</strong>
+      </div>
+    </div>
+  )}
+</section>
 
       {/* Block 23 - Active Alerts Dashboard Integration*/}
       <ActiveAlerts
@@ -399,6 +594,9 @@ const Dashboard = ({ datasetId }) => {
             Alerts detected: {analysisResult.summary.alert_count}
           </div>
         )}
+      </section>
+      <section className="dashboard-section">
+      <ApiResponseTrend data={apiTrendData} />
       </section>
       <div className="chart-analysis-grid">
         <section className="dashboard-section chart-analysis-card">
